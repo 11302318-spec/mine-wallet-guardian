@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>荷包守門員 - 智慧理財助手</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <style>
+        :root { --primary: #ffeb3b; --accent: #ff9800; --save: #4CAF50; --danger: #ff5252; --shopping: #9c27b0; }
+        body {
+            font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif;
+            background: url('https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?auto=format&fit=crop&w=1920&q=80') no-repeat center center fixed;
+            background-size: cover; color: #fff; margin: 0;
+        }
+        .overlay { background-color: rgba(0,0,0,0.5); min-height: 100vh; padding: 20px; box-sizing: border-box; }
+        .container { 
+            max-width: 750px; margin: 20px auto; 
+            background-color: rgba(255,255,255,0.12); padding: 25px; 
+            border-radius: 28px; box-shadow: 0 15px 50px rgba(0,0,0,0.4); 
+            backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.2);
+            position: relative;
+        }
+        .logout-btn { 
+            position: absolute; top: 20px; right: 20px; 
+            background: rgba(255,255,255,0.1); color: #ccc; 
+            font-size: 0.75rem; padding: 5px 12px; border-radius: 20px; 
+            border: 1px solid rgba(255,255,255,0.3); cursor: pointer;
+        }
+        h1 { font-size: 2rem; color: var(--primary); text-align: center; margin-bottom: 20px; text-shadow: 2px 2px 8px rgba(0,0,0,0.3); }
+        .card { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 15px; margin-bottom: 20px; }
+        .progress-container { background: #444; height: 12px; border-radius: 6px; margin: 10px 0; overflow: hidden; }
+        .progress-bar { height: 100%; width: 0%; background: var(--primary); transition: 0.5s; }
+        .save-bar { background: var(--save) !important; }
+        
+        /* 篩選器樣式 */
+        .filter-box { display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; }
+        .filter-box input[type="month"] { width: auto; background: rgba(255,255,255,0.2); color: white; border: 1px solid #777; padding: 5px 10px; margin: 0; }
+
+        .type-toggle { display: flex; margin-bottom: 10px; gap: 5px; }
+        .type-btn { flex: 1; padding: 10px; border-radius: 10px; border: 2px solid transparent; cursor: pointer; background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; }
+        .type-btn.active-exp { border-color: var(--danger); background: rgba(255,82,82,0.2); }
+        .type-btn.active-save { border-color: var(--save); background: rgba(76,175,80,0.2); }
+        
+        .ai-advisor { background: linear-gradient(135deg, rgba(255,235,59,0.2), rgba(255,152,0,0.2)); border: 2px solid var(--primary); padding: 15px; border-radius: 15px; margin: 20px 0; font-weight: bold; }
+
+        input { width: 100%; padding: 12px; border-radius: 10px; border: none; font-size: 1rem; margin-bottom: 10px; box-sizing: border-box; }
+        button { padding: 12px; border-radius: 10px; border: none; cursor: pointer; transition: 0.2s; font-weight: bold; }
+        
+        .save-txt { color: var(--save); font-weight: bold; }
+        .cate-badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-right: 5px; color: #fff; }
+        
+        /* 歷史紀錄表格優化 */
+        .history-section { max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: 15px; padding: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { text-align: left; color: var(--primary); border-bottom: 2px solid rgba(255,255,255,0.1); padding: 10px 5px; }
+        td { padding: 12px 5px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+
+        .app-box { display: none; }
+    </style>
+</head>
+<body>
+<div class="overlay">
+    <div class="container">
+        <h1>💰 荷包守門員</h1>
+        <div id="authBox">
+            <input type="email" id="email" placeholder="信箱">
+            <input type="password" id="password" placeholder="密碼">
+            <button onclick="handleLogin()" style="width: 100%; background: var(--accent); color: #fff;">登入</button>
+            <button onclick="handleSignUp()" style="width: 100%; margin-top: 10px; background: var(--save); color: #fff;">註冊</button>
+        </div>
+
+        <div id="appBox" class="app-box">
+            <button class="logout-btn" onclick="handleLogout()">登出</button>
+            
+            <div class="filter-box">
+                <span style="font-size: 0.9rem; color: #ddd;">📅 檢視月份：</span>
+                <input type="month" id="monthFilter" onchange="loadData()">
+            </div>
+
+            <div class="card">
+                <div style="display: flex; justify-content: space-between;">
+                    <span><span id="displayMonth">本</span>月支出 ($<span id="monthSpend">0</span> / $<span id="budgetVal">10000</span>)</span>
+                    <a href="javascript:setBudget()" style="color: var(--primary); font-size: 0.8rem;">[設定預算]</a>
+                </div>
+                <div class="progress-container"><div id="budgetBar" class="progress-bar"></div></div>
+            </div>
+
+            <div class="ai-advisor">🤖 軍師：<span id="aiText">正在讀取歷史卷軸...</span></div>
+
+            <div class="type-toggle">
+                <button id="modeExp" class="type-btn active-exp" onclick="setMode('expense')">💸 記支出</button>
+                <button id="modeSave" class="type-btn" onclick="setMode('saving')">💰 記存錢</button>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="recordInput" placeholder="如: 晚餐 120">
+                <button id="mainBtn" onclick="addRecord()" style="flex: 1; background: var(--accent); color: white;">確認</button>
+            </div>
+            
+            <canvas id="myChart" style="max-height: 180px; margin: 20px 0;"></canvas>
+
+            <h3 style="color: var(--primary); margin-bottom: 10px;">🕒 歷史紀錄</h3>
+            <div class="history-section">
+                <table>
+                    <thead>
+                        <tr><th>日期</th><th>分類/項目</th><th>金額</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="recordTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const sounds = {
+        success: new Audio('https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'),
+        delete: new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3'),
+        login: new Audio('https://assets.mixkit.co/active_storage/sfx/2017/2017-preview.mp3')
+    };
+    function playSfx(type) { sounds[type].currentTime = 0; sounds[type].play().catch(() => {}); }
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBuk3dItipnTiXU8SP46yv6yTW1aIjCGuU",
+      authDomain: "ai-expense-20060213.firebaseapp.com",
+      projectId: "ai-expense-20060213",
+      storageBucket: "ai-expense-20060213.firebasestorage.app",
+      messagingSenderId: "14396823732",
+      appId: "1:14396823732:web:f609d9867139091e9d5fe1"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth(), db = firebase.firestore();
+
+    let currentUser = null, myChart = null, currentMode = 'expense';
+    let monthlyBudget = 10000;
+
+    // 初始化月份篩選器為當月
+    const now = new Date();
+    document.getElementById('monthFilter').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            currentUser = user;
+            document.getElementById('authBox').style.display = 'none';
+            document.getElementById('appBox').style.display = 'block';
+            playSfx('login'); loadSettings(); initChart(); loadData();
+        } else {
+            document.getElementById('authBox').style.display = 'block';
+            document.getElementById('appBox').style.display = 'none';
+        }
+    });
+
+    function getCategory(item) {
+        if (currentMode === 'saving') return "存款";
+        const rules = [
+            { cat: "飲料", regex: /飲|水|奶|茶|啡|汁|可樂|雪碧|芬達|汽水|紅牛|怪獸|酒|漿|可可|巧克力|抹茶|昔|醋|露|多|拿鐵|摩卡|瑪奇朵/ },
+            { cat: "交通", regex: /車|機|船|艇|軌|列車|鐵|高鐵|捷運|地鐵|巴士|悠遊|Uber|滑板|索|電梯|梯|航|飛|空|火箭|物流|配送|取貨/ },
+            { cat: "餐飲", regex: /飯|麵|饅|包|餃|燒|餅|油條|壽司|刺身|天婦羅|咖哩|糰|便當|炒|燴|粥|鍋|爐|湯|烤|排|雞|鴨|鵝|肉|豆腐|茄|蝦|魚|薯|漢堡|狗|明治|貝果|披薩|義大|焗|蛋|塔|餅|糖|巧克力|冰|果凍|蛋糕|泡芙/ },
+            { cat: "購物", regex: /衣|褲|鞋|包|帽|襪|飾|項鍊|戒|耳|髮|妝|乳|液|精華|皂|洗|紙|巾|棉|尿布|潔|具|家具|桌|椅|床|燈|機|腦|筆|書|文具|寵物|貓|狗|嬰|折|購|店|網|刷|款|箱|墊|鏡|錶|刀|剪|傘|工具|玩具/ }
+        ];
+        for (let rule of rules) if (rule.regex.test(item)) return rule.cat;
+        return "其他";
+    }
+
+    function addRecord() {
+        const input = document.getElementById("recordInput").value.trim();
+        const parts = input.split(" ");
+        if(parts.length < 2) return Swal.fire('提示', '請輸入「項目 金額」', 'info');
+        const item = parts[0], amount = parseFloat(parts[1]);
+        const category = getCategory(item);
+        db.collection("users").doc(currentUser.uid).collection("records").add({
+            item, amount, category, type: currentMode,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(() => { 
+            playSfx('success');
+            document.getElementById("recordInput").value = ""; 
+            loadData(); 
+        });
+    }
+
+    function loadData() {
+        const filterVal = document.getElementById('monthFilter').value; // 格式: "2023-10"
+        const [fYear, fMonth] = filterVal.split('-').map(Number);
+        document.getElementById('displayMonth').innerText = fMonth;
+
+        db.collection("users").doc(currentUser.uid).collection("records").orderBy("timestamp", "desc").get().then(snapshot => {
+            const tbody = document.getElementById("recordTable");
+            tbody.innerHTML = "";
+            let totals = { 飲料:0, 餐飲:0, 交通:0, 購物:0, 其他:0 };
+            let filteredSpend = 0;
+
+            snapshot.forEach(doc => {
+                const d = doc.data();
+                const date = d.timestamp ? d.timestamp.toDate() : new Date();
+                
+                // 篩選月份邏輯
+                if (date.getFullYear() === fYear && (date.getMonth() + 1) === fMonth) {
+                    const tr = document.createElement("tr");
+                    const isSaving = d.type === 'saving';
+                    const colorClass = isSaving ? 'save-txt' : '';
+                    
+                    tr.innerHTML = `
+                        <td>${date.getMonth()+1}/${date.getDate()}</td>
+                        <td class="${colorClass}"><span class="cate-badge" style="background:${getCatColor(d.category, d.type)}">${isSaving?'存款':(d.category||"其他")}</span>${d.item}</td>
+                        <td class="${colorClass}">$${d.amount}</td>
+                        <td><button onclick="delRec('${doc.id}')" style="background:var(--danger); color:white; border:none; border-radius:4px; padding:3px 8px; cursor:pointer;">刪除</button></td>
+                    `;
+                    tbody.appendChild(tr);
+
+                    if (!isSaving) {
+                        filteredSpend += d.amount;
+                        if(totals[d.category] !== undefined) totals[d.category] += d.amount;
+                        else totals['其他'] += d.amount;
+                    }
+                }
+            });
+            updateUI(filteredSpend, totals);
+        });
+    }
+
+    function updateUI(spend, totals) {
+        let spendPercent = (spend / monthlyBudget) * 100;
+        document.getElementById('budgetBar').style.width = Math.min(spendPercent, 100) + '%';
+        document.getElementById('budgetBar').style.background = spendPercent > 85 ? 'var(--danger)' : 'var(--primary)';
+        document.getElementById('monthSpend').innerText = spend;
+
+        let maxCat = Object.keys(totals).reduce((a, b) => totals[a] > totals[b] ? a : b);
+        let aiMsg = spend === 0 ? "該月尚無數據，快開始記帳吧！" : (spendPercent > 100 ? "警報！該月已超支！" : `目前「${maxCat}」是主要花費，請多留意。`);
+        document.getElementById('aiText').innerText = aiMsg;
+
+        myChart.data.datasets[0].data = [totals.飲料, totals.餐飲, totals.交通, totals.購物, totals.其他];
+        myChart.update();
+    }
+
+    function getCatColor(cat, type) {
+        if(type === 'saving') return 'var(--save)';
+        const colors = { '飲料': '#ff5252', '餐飲': '#42a5f5', '交通': '#ffca28', '購物': '#9c27b0', '其他': '#4db6ac' };
+        return colors[cat] || '#4db6ac';
+    }
+
+    function initChart() {
+        const ctx = document.getElementById('myChart').getContext('2d');
+        myChart = new Chart(ctx, { 
+            type: 'doughnut', 
+            data: { labels: ['飲料', '餐飲', '交通', '購物', '其他'], datasets: [{ data: [0,0,0,0,0], backgroundColor: ['#ff5252', '#42a5f5', '#ffca28', '#9c27b0', '#4db6ac'] }] }, 
+            options: { plugins: { legend: { position: 'right', labels: { color: '#fff', boxWidth: 10, font: {size: 10} } } } } 
+        });
+    }
+
+    function delRec(id) {
+        Swal.fire({title: '確定刪除?', icon:'warning', showCancelButton:true, confirmButtonColor: '#ff5252'}).then(res => {
+            if(res.isConfirmed) {
+                db.collection("users").doc(currentUser.uid).collection("records").doc(id).delete().then(() => {
+                    playSfx('delete'); loadData();
+                });
+            }
+        });
+    }
+
+    function setMode(mode) { currentMode = mode; document.getElementById('modeExp').className = mode === 'expense' ? 'type-btn active-exp' : 'type-btn'; document.getElementById('modeSave').className = mode === 'saving' ? 'type-btn active-save' : 'type-btn'; }
+    function loadSettings() { db.collection("users").doc(currentUser.uid).get().then(doc => { if(doc.exists) { monthlyBudget = doc.data().budget || 10000; document.getElementById('budgetVal').innerText = monthlyBudget; } }); }
+    function setBudget() { Swal.fire({ title: '設定月預算', input: 'number', inputValue: monthlyBudget }).then(res => { if(res.value) { monthlyBudget = parseInt(res.value); db.collection("users").doc(currentUser.uid).set({ budget: monthlyBudget }, {merge:true}).then(loadData); } }); }
+    function handleLogout() { auth.signOut().then(() => { playSfx('login'); Swal.fire('已登出', '下次見！', 'success'); }); }
+    function handleLogin() { auth.signInWithEmailAndPassword(document.getElementById('email').value, document.getElementById('password').value).catch(e => Swal.fire('錯誤', e.message, 'error')); }
+    function handleSignUp() { auth.createUserWithEmailAndPassword(document.getElementById('email').value, document.getElementById('password').value).then(() => Swal.fire('歡迎', '帳號已建立', 'success')); }
+</script>
+</body>
+</html>
